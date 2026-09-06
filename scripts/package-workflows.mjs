@@ -35,7 +35,7 @@ for(const[id,file]of mapping){
    .replace(/const CONFIRMATION_CODE = '[^']+';/,"const CONFIRMATION_CODE = 'YOUR_VK_CONFIRMATION_CODE';")
    .replaceAll('__RESTORE_SECRET_0__','YOUR_VK_CALLBACK_SECRET');
   const prompt=w.nodes.find(n=>n.name==='Landlots AI Agent').parameters.options.systemMessage;
-  fs.writeFileSync(path.join(root,'docs','agent-system-prompt.txt'),prompt.trimEnd()+'\n');
+  fs.writeFileSync(path.join(root,'docs','agent-system-prompt.md'),prompt.trimEnd()+'\n');
  }
  const text=JSON.stringify(w,null,2)+'\n';
  fs.writeFileSync(path.join(root,'workflows',file),text);

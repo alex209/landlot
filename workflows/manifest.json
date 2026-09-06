@@ -1,5 +1,5 @@
 {
-  "exportedAt": "2026-09-06T12:09:49.968Z",
+  "exportedAt": "2026-09-06T12:44:59.827Z",
   "n8nVersion": "2.37.9",
   "workflowCount": 6,
   "testWorkflowsIncluded": false,
@@ -16,7 +16,7 @@
       "name": "Landlots — VK RAG Bot",
       "file": "workflows/01-vk-landlots-bot.json",
       "source": "published",
-      "version": "1fd1b00d-07f8-4f7f-b677-ae913f110326",
+      "version": "579dada8-0b28-4851-bd0a-754028902fdc",
       "activeAtExport": true,
       "nodeCount": 23,
       "dependencies": [
@@ -25,7 +25,7 @@
         "llGeocodeAddress26",
         "llBatchDrivingRoutes26"
       ],
-      "sha256": "4ffbd6185ce18d0e7191d4b5234c945e55b74f88a7b7096cd21808fbe0a3d43c"
+      "sha256": "79d84f18acfa4a598696ff962221dbd395e18a9a96690c3a8b7cc8a7a9a0e0fc"
     },
     {
       "id": "llDrivingRoute26",

@@ -30,6 +30,10 @@ for(const w of bundle){
  nodeCount+=w.nodes.length;
 }
 const main=bundle.find(w=>w.id==='nbisdQoYTU9QS6RC');
+const normalizePrompt=s=>s.replace(/\r\n/g,'\n').trimEnd();
+assert.equal(normalizePrompt(fs.readFileSync(path.join(root,'docs/agent-system-prompt.md'),'utf8')),
+ normalizePrompt(main.nodes.find(n=>n.name==='Landlots AI Agent').parameters.options.systemMessage),
+ 'Standalone Markdown prompt differs from the workflow');
 const code=main.nodes.find(n=>n.name==='Validate VK Event').parameters.jsCode;
 for(const s of manifest.deploymentPlaceholders)assert(code.includes(s),'Missing placeholder '+s);
 assert(main.nodes.some(n=>n.name==='get_batch_driving_routes'));
