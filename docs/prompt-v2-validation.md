@@ -5,7 +5,7 @@
 Опубликованная версия основного workflow: `579dada8-0b28-4851-bd0a-754028902fdc`.
 Предыдущая версия: `1fd1b00d-07f8-4f7f-b677-ae913f110326`.
 
-Полный текст: [agent-system-prompt.md](agent-system-prompt.md).
+Полный текст проверенной редакции: [agent-system-prompt-v2.md](agent-system-prompt-v2.md).
 
 ## Объём изменений
 
