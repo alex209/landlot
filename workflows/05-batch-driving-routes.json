@@ -1,0 +1,388 @@
+{
+  "id": "llBatchDrivingRoutes26",
+  "name": "Landlots — Batch Driving Routes (OSRM)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "4c223bc4-c5b7-46ff-95a3-a5f2d467ed74",
+      "name": "Batch Route Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "identifiers_json",
+              "type": "string"
+            },
+            {
+              "name": "destination_latitude",
+              "type": "number"
+            },
+            {
+              "name": "destination_longitude",
+              "type": "number"
+            },
+            {
+              "name": "destination_label",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "id": "d0c4668f-0a18-455a-b9a2-294ff3807bb4",
+      "name": "Validate Batch Input",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const f=$input.first().json;\nlet identifiers;\ntry { identifiers=JSON.parse(f.identifiers_json); } catch { throw new Error('identifiers_json: нужен JSON-массив кадастровых номеров или lot_key.'); }\nconst pattern=/^(?:[0-9]{1,30}:[0-9]{1,10}|[0-9]{2}:[0-9]{2}:[0-9]{1,12}:[0-9]{1,12})$/;\nif(!Array.isArray(identifiers)||identifiers.length<1||identifiers.length>50||identifiers.some(x=>typeof x!=='string'||!pattern.test(x)))throw new Error('Передайте от 1 до 50 точных идентификаторов; адреса и SQL недопустимы.');\nidentifiers=[...new Set(identifiers)];\nfor(const k of ['destination_latitude','destination_longitude'])if(typeof f[k]!=='number'||!Number.isFinite(f[k])||Math.abs(f[k])>(k.endsWith('latitude')?90:180))throw new Error('Нужны проверенные числовые координаты конечной точки.');\nif(f.destination_latitude===0&&f.destination_longitude===0)throw new Error('Нулевая конечная точка недопустима.');\nif(typeof f.destination_label!=='string'||!f.destination_label.trim()||f.destination_label.length>200||/[\\x00-\\x1f]/.test(f.destination_label))throw new Error('Нужно название подтверждённой конечной точки.');\nreturn [{json:{identifiers,identifiers_json:JSON.stringify(identifiers),destination_latitude:f.destination_latitude,destination_longitude:f.destination_longitude,destination_label:f.destination_label.trim()}}];\n"
+      },
+      "position": [
+        240,
+        0
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "eb00abce-540f-448b-83d7-1d1f6ed7467b",
+      "name": "Batch Lot Locations",
+      "type": "n8n-nodes-base.mySql",
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT lot_key, cadastral_number, nspd_address AS address,\n center_latitude AS latitude, center_longitude AS longitude,\n source_url, last_seen_at\nFROM landlots.lots\nWHERE region_code = '50'\n AND (JSON_CONTAINS($1, JSON_QUOTE(lot_key))\n      OR JSON_CONTAINS($1, JSON_QUOTE(cadastral_number)))\nORDER BY lot_key\nLIMIT 1001;\n",
+        "options": {
+          "queryReplacement": "={{ [$json.identifiers_json] }}"
+        }
+      },
+      "position": [
+        480,
+        0
+      ],
+      "typeVersion": 2.5,
+      "credentials": {
+        "mySql": {
+          "id": "aax1S9zBSuTPIz3P",
+          "name": "Landlots MySQL Reader"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "4ed28851-194a-4edb-9d12-d11a94fc8f85",
+      "name": "Resolve Batch Lots",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input=$('Validate Batch Input').first().json;\nconst rows=$input.all().map(x=>x.json).filter(x=>x.lot_key);\nif(rows.length>=1001)throw new Error('Слишком много совпадений. Уточните точные lot_key.');\nreturn input.identifiers.map(identifier=>{\n const matches=rows.filter(x=>x.lot_key===identifier||x.cadastral_number===identifier);\n const base={identifier,destination_latitude:input.destination_latitude,destination_longitude:input.destination_longitude,destination_label:input.destination_label};\n if(matches.length!==1)return {json:{...base,valid:false,error_code:matches.length?'AmbiguousLot':'LotNotFound',matches:matches.map(x=>({lot_key:x.lot_key,cadastral_number:x.cadastral_number}))}};\n const row=matches[0],lat=Number(row.latitude),lon=Number(row.longitude);\n const record={...base,lot_key:row.lot_key,cadastral_number:row.cadastral_number,address:row.address,source_url:row.source_url,last_seen_at:row.last_seen_at};\n if(row.latitude==null||row.longitude==null||row.latitude===''||row.longitude===''||!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180||(lat===0&&lon===0))return {json:{...record,valid:false,error_code:'InvalidLotCoordinates'}};\n return {json:{...record,valid:true,origin_latitude:lat,origin_longitude:lon,origin_label:String(row.cadastral_number||row.lot_key)}};\n});\n"
+      },
+      "position": [
+        720,
+        0
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "91f57ec6-0b08-403f-8323-1074664a62b6",
+      "name": "Loop Routes",
+      "type": "n8n-nodes-base.splitInBatches",
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "position": [
+        960,
+        0
+      ],
+      "typeVersion": 3
+    },
+    {
+      "id": "14a9f682-ada8-4d7b-b713-e694a5da9b95",
+      "name": "Valid Coordinates",
+      "type": "n8n-nodes-base.if",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9195176a-2b0e-410d-a937-523fc12eda62",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        1200,
+        180
+      ],
+      "typeVersion": 2.2
+    },
+    {
+      "id": "7590ac09-b256-4aa2-83fc-c2f8fc0ca809",
+      "name": "Calculate One Route",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "llDrivingRoute26"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "origin_latitude": "={{ $json.origin_latitude }}",
+            "origin_longitude": "={{ $json.origin_longitude }}",
+            "destination_latitude": "={{ $json.destination_latitude }}",
+            "destination_longitude": "={{ $json.destination_longitude }}",
+            "origin_label": "={{ $json.origin_label }}",
+            "destination_label": "={{ $json.destination_label }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "origin_latitude",
+              "displayName": "origin_latitude",
+              "type": "number",
+              "required": false,
+              "display": true
+            },
+            {
+              "id": "origin_longitude",
+              "displayName": "origin_longitude",
+              "type": "number",
+              "required": false,
+              "display": true
+            },
+            {
+              "id": "destination_latitude",
+              "displayName": "destination_latitude",
+              "type": "number",
+              "required": false,
+              "display": true
+            },
+            {
+              "id": "destination_longitude",
+              "displayName": "destination_longitude",
+              "type": "number",
+              "required": false,
+              "display": true
+            },
+            {
+              "id": "origin_label",
+              "displayName": "origin_label",
+              "type": "string",
+              "required": false,
+              "display": true
+            },
+            {
+              "id": "destination_label",
+              "displayName": "destination_label",
+              "type": "string",
+              "required": false,
+              "display": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "position": [
+        1440,
+        100
+      ],
+      "typeVersion": 1.3,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "3ddff520-aafc-46e6-b819-25efa93f79d6",
+      "name": "Attach Route Result",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const request=$('Loop Routes').item.json;\nconst result=$input.first().json;\nconst base={identifier:request.identifier,lot_key:request.lot_key,cadastral_number:request.cadastral_number,address:request.address,source_url:request.source_url};\nif(result.ok!==true)return [{json:{...base,ok:false,error_code:result.error_code||'RoutingServiceError',message:result.message||'Не удалось рассчитать маршрут. Расстояние не подтверждено.'}}];\nreturn [{json:{...base,ok:true,distance_m:result.distance_m,duration_s:result.duration_s,distance_km_rounded:result.distance_km_rounded,duration_text:result.duration_text,origin_road_offset_m:result.snapped_points?.find(x=>x.point==='origin')?.offset_m,destination_road_offset_m:result.snapped_points?.find(x=>x.point==='destination')?.offset_m,map_data_timestamp:result.map_data_timestamp}}];\n"
+      },
+      "position": [
+        1680,
+        100
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "d58f7ef1-60e2-46c6-9d80-4b5172ef720a",
+      "name": "Keep Failed Lot",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const r=$input.first().json; return [{json:{identifier:r.identifier,lot_key:r.lot_key,cadastral_number:r.cadastral_number,ok:false,error_code:r.error_code,matches:r.matches}}];"
+      },
+      "position": [
+        1440,
+        340
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "47f124d1-a337-429c-b4a8-9e8c684af859",
+      "name": "Summarize Batch Routes",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input=$('Validate Batch Input').first().json;\nconst results=$input.all().map(x=>x.json);\nif(results.length!==input.identifiers.length||new Set(results.map(x=>x.identifier)).size!==input.identifiers.length)throw new Error('Пакетный расчёт вернул неполный или повторный набор результатов.');\nconst routes=results.filter(x=>x.ok===true).sort((a,b)=>a.duration_s-b.duration_s||a.distance_m-b.distance_m||a.identifier.localeCompare(b.identifier));\nconst failures=results.filter(x=>x.ok!==true);\nreturn [{json:{ok:failures.length===0,partial:routes.length>0&&failures.length>0,requested_count:input.identifiers.length,calculated_count:routes.length,failed_count:failures.length,destination:{label:input.destination_label,latitude:input.destination_latitude,longitude:input.destination_longitude},sorted_by:'duration_s_ascending',routes,failures,provider:'OSRM / OpenStreetMap',traffic_included:false,checked_at_utc:new Date().toISOString(),warnings:['Координаты начала — центры участков из базы; подъезд и законность доступа отдельно не проверены.','Время приблизительное, без текущих пробок и перекрытий.','Если смещение любой точки к дороге больше 100 м, укажите это для соответствующего маршрута.','Это сравнение только переданного списка, не всех участков базы.']}}];\n"
+      },
+      "position": [
+        1200,
+        -100
+      ],
+      "typeVersion": 2
+    }
+  ],
+  "connections": {
+    "Batch Route Input": {
+      "main": [
+        [
+          {
+            "node": "Validate Batch Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Batch Input": {
+      "main": [
+        [
+          {
+            "node": "Batch Lot Locations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch Lot Locations": {
+      "main": [
+        [
+          {
+            "node": "Resolve Batch Lots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Batch Lots": {
+      "main": [
+        [
+          {
+            "node": "Loop Routes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Routes": {
+      "main": [
+        [
+          {
+            "node": "Summarize Batch Routes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Valid Coordinates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Coordinates": {
+      "main": [
+        [
+          {
+            "node": "Calculate One Route",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Keep Failed Lot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate One Route": {
+      "main": [
+        [
+          {
+            "node": "Attach Route Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Route Result": {
+      "main": [
+        [
+          {
+            "node": "Loop Routes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep Failed Lot": {
+      "main": [
+        [
+          {
+            "node": "Loop Routes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "bac631aa-b2e0-4d39-971c-a3e559b359f5",
+  "meta": {},
+  "tags": []
+}

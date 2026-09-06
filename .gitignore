@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+private.env
+credentials*.json
+*-before.json
+*.sqlite*
+*.log
+*.zip
+node_modules/
+backups/
+exports-private/
+*.pem
+*.key
+id_rsa*
+id_ed25519*

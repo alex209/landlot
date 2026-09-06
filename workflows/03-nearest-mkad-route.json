@@ -1,0 +1,138 @@
+{
+  "id": "llNearestMkad26",
+  "name": "Landlots — Nearest MKAD Route (OSRM)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "5aef57d3-e982-4240-a65c-481e64c73a2a",
+      "name": "MKAD Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "latitude",
+              "type": "number"
+            },
+            {
+              "name": "longitude",
+              "type": "number"
+            },
+            {
+              "name": "label",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "id": "488503cc-2c80-4df5-a1d3-ce65d95158e5",
+      "name": "Validate MKAD Input",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const input = $input.all();\nif (input.length !== 1) throw new Error('Нужна одна исходная точка.');\nconst {latitude, longitude, label} = input[0].json;\nif (typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||\n    typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {\n  throw new Error('Нужны числовые координаты из SQL или явного ввода пользователя.');\n}\nif (typeof label !== 'string' || !label.trim() || label.trim().length > 200 || /[\\x00-\\x1f]/.test(label)) {\n  throw new Error('Нужно краткое название исходной точки до 200 символов.');\n}\nreturn [{json:{latitude, longitude, label:label.trim()}}];\n",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        240,
+        0
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "c2237846-c7ff-4e3f-bfd1-4e2ed24f31a4",
+      "name": "Request MKAD Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "http://172.16.203.45:5001/nearest-mkad-route",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "position": [
+        480,
+        0
+      ],
+      "typeVersion": 4.4,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ac8ac90d-08a1-4199-af83-3f4940065438",
+      "name": "Format MKAD Result",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst body = response.body;\nif (body && typeof body === 'object' && body.ok === false && body.error && typeof body.error.code === 'string') {\n  return [{json:body}];\n}\nif (response.statusCode === 200 && body && body.ok === true && body.comparison?.complete === true &&\n    Number.isFinite(body.distance_m) && Number.isFinite(body.duration_seconds) && body.destination?.id) {\n  return [{json:body}];\n}\nreturn [{json:{ok:false,error:{code:'RoutingUnavailable',message:'Сервис расчёта до МКАД недоступен или вернул неполный ответ. Расстояние не определено.'}}}];\n",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        720,
+        0
+      ],
+      "typeVersion": 2
+    }
+  ],
+  "connections": {
+    "MKAD Input": {
+      "main": [
+        [
+          {
+            "node": "Validate MKAD Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate MKAD Input": {
+      "main": [
+        [
+          {
+            "node": "Request MKAD Service",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request MKAD Service": {
+      "main": [
+        [
+          {
+            "node": "Format MKAD Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "b4dff273-641c-4a02-b2c1-30cf82b40ec4",
+  "meta": {},
+  "tags": []
+}

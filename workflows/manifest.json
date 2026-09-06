@@ -1,0 +1,88 @@
+{
+  "exportedAt": "2026-09-06T12:09:49.968Z",
+  "n8nVersion": "2.37.9",
+  "workflowCount": 6,
+  "testWorkflowsIncluded": false,
+  "credentialsIncluded": false,
+  "executionDataIncluded": false,
+  "deploymentPlaceholders": [
+    "YOUR_VK_GROUP_ID",
+    "YOUR_VK_CALLBACK_SECRET",
+    "YOUR_VK_CONFIRMATION_CODE"
+  ],
+  "workflows": [
+    {
+      "id": "nbisdQoYTU9QS6RC",
+      "name": "Landlots — VK RAG Bot",
+      "file": "workflows/01-vk-landlots-bot.json",
+      "source": "published",
+      "version": "1fd1b00d-07f8-4f7f-b677-ae913f110326",
+      "activeAtExport": true,
+      "nodeCount": 23,
+      "dependencies": [
+        "llDrivingRoute26",
+        "llNearestMkad26",
+        "llGeocodeAddress26",
+        "llBatchDrivingRoutes26"
+      ],
+      "sha256": "4ffbd6185ce18d0e7191d4b5234c945e55b74f88a7b7096cd21808fbe0a3d43c"
+    },
+    {
+      "id": "llDrivingRoute26",
+      "name": "Landlots — Driving Route (OSRM)",
+      "file": "workflows/02-driving-route.json",
+      "source": "published",
+      "version": "1c7aace9-8ed4-4d77-9bc7-4f7e8c54b209",
+      "activeAtExport": true,
+      "nodeCount": 4,
+      "dependencies": [],
+      "sha256": "97debbf232f8745eb7a43c493040dfa73851673220209fd2bf057dcea89c96a9"
+    },
+    {
+      "id": "llNearestMkad26",
+      "name": "Landlots — Nearest MKAD Route (OSRM)",
+      "file": "workflows/03-nearest-mkad-route.json",
+      "source": "published",
+      "version": "b4dff273-641c-4a02-b2c1-30cf82b40ec4",
+      "activeAtExport": true,
+      "nodeCount": 4,
+      "dependencies": [],
+      "sha256": "480d44b31b2f10f1eb80f9fe5c2d7e7574d2178e98906dfc14e4d054e1cc01c7"
+    },
+    {
+      "id": "llGeocodeAddress26",
+      "name": "Landlots — Geocode Address (local Nominatim)",
+      "file": "workflows/04-geocode-address.json",
+      "source": "published",
+      "version": "59b85095-f465-4d25-9635-d768e429ca6e",
+      "activeAtExport": true,
+      "nodeCount": 4,
+      "dependencies": [],
+      "sha256": "11cc203c5c92ec01627184730d73f438c8264315235871d750fedb16043e6f36"
+    },
+    {
+      "id": "llBatchDrivingRoutes26",
+      "name": "Landlots — Batch Driving Routes (OSRM)",
+      "file": "workflows/05-batch-driving-routes.json",
+      "source": "published",
+      "version": "bac631aa-b2e0-4d39-971c-a3e559b359f5",
+      "activeAtExport": true,
+      "nodeCount": 10,
+      "dependencies": [
+        "llDrivingRoute26"
+      ],
+      "sha256": "50d7378fa2d2604f2626a3a14a3dd523bbe0d5c5cc59fdac961e5ed6bcf7ea6c"
+    },
+    {
+      "id": "xsPCVDWixBaCSHED",
+      "name": "Landlots — Initial RAG Index",
+      "file": "workflows/06-initial-rag-index.json",
+      "source": "current",
+      "version": "172379e2-5382-46cc-9e82-4eda2da8624a",
+      "activeAtExport": false,
+      "nodeCount": 9,
+      "dependencies": [],
+      "sha256": "8d643879a06de2379f8cefe81a403e44f23b299ce9525849107f9640581c8d69"
+    }
+  ]
+}

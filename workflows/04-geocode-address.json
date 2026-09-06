@@ -1,0 +1,163 @@
+{
+  "id": "llGeocodeAddress26",
+  "name": "Landlots — Geocode Address (local Nominatim)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "cab78191-f7f7-4fbf-94e5-2c4988788017",
+      "name": "Address Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "query",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1.2
+    },
+    {
+      "id": "720309e4-8699-4a4c-8dc9-e5d1f0b5b110",
+      "name": "Validate Address Input",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const items=$input.all();\nif(items.length!==1) throw new Error('Нужен один адрес за вызов.');\nconst query=items[0].json.query;\nif(typeof query!=='string' || query.trim().length<3 || query.trim().length>300 || /[\\x00-\\x1f]/.test(query)) {\n  throw new Error('Адрес должен содержать от 3 до 300 символов без управляющих символов.');\n}\n// Preserve all numbers and letters; normalize only explicit house/corpus labels.\n// Nominatim's Russian house-number tokens often use \"14к1\", not \"дом 14, корпус 1\".\nconst search_query=query.trim()\n  .replace(/(^|[\\s,])дом\\s+(?=\\d)/giu,'$1')\n  .replace(/(\\d+[а-яa-z]?(?:\\/\\d+[а-яa-z]?)?)\\s*,?\\s*(?:корпус|корп\\.?|к\\.)\\s*(\\d+[а-яa-z]?)(?=$|[\\s,])/giu,'$1к$2')\n  .replace(/\\s+/g,' ').trim();\nreturn [{json:{query:query.trim(),search_query}}];\n",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        240,
+        0
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "1fa048a2-fd1b-4c2f-8a66-409dd8e95d95",
+      "name": "Request Local Geocoder",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "url": "http://172.16.203.45:5002/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.search_query }}"
+            },
+            {
+              "name": "format",
+              "value": "jsonv2"
+            },
+            {
+              "name": "addressdetails",
+              "value": "1"
+            },
+            {
+              "name": "limit",
+              "value": "5"
+            },
+            {
+              "name": "countrycodes",
+              "value": "ru"
+            },
+            {
+              "name": "accept-language",
+              "value": "ru"
+            },
+            {
+              "name": "viewbox",
+              "value": "34.72,57.22,40.63,54.00"
+            },
+            {
+              "name": "bounded",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "position": [
+        480,
+        0
+      ],
+      "typeVersion": 4.4,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "dafa33da-1720-4b23-ae77-e45d9e09da16",
+      "name": "Format Address Candidates",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const query=$('Validate Address Input').first().json.query;\nconst response=$input.first().json;\nconst base={query,search_query:$('Validate Address Input').first().json.search_query??query,provider:'Self-hosted Nominatim / OpenStreetMap',coverage:'Москва, Московская область и приграничный буфер карты',map_timestamp:'2026-09-04T20:21:21Z',checked_at_utc:new Date().toISOString(),attribution:'© OpenStreetMap contributors',license:'https://www.openstreetmap.org/copyright'};\nif(response.statusCode!==200 || !Array.isArray(response.body)) {\n  return [{json:{...base,ok:false,error:{code:'GeocoderUnavailable',message:'Собственный геокодер недоступен или вернул ошибку. Координаты не определены.'}}}];\n}\nconst candidates=[];\nconst rawItems=response.body.slice(0,5);\nfor(const item of rawItems) {\n  const latitude=Number(item.lat),longitude=Number(item.lon);\n  if(typeof item.lat!=='string' || typeof item.lon!=='string' || !item.lat.trim() || !item.lon.trim() ||\n      !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude<54 || latitude>57.22 || longitude<34.72 || longitude>40.63 ||\n      typeof item.display_name!=='string' || !['node','way','relation'].includes(item.osm_type) || !Number.isSafeInteger(item.osm_id)) {\n    return [{json:{...base,ok:false,error:{code:'InvalidGeocoderResult',message:'Геокодер вернул непроверяемые координаты. Расчёт маршрута не выполнять.'}}}];\n  }\n  const address=item.address && typeof item.address==='object' ? item.address : {};\n  const precision=address.house_number ? 'house' : item.category==='highway' || item.addresstype==='road' ? 'street' :\n      ['city','town','village','hamlet','suburb','quarter','neighbourhood','municipality'].includes(item.addresstype) ? 'settlement_or_area' : 'named_object_or_area';\n  candidates.push({candidate_id:`${item.osm_type}:${item.osm_id}`,display_name:item.display_name,latitude,longitude,address,\n    precision,object_type:item.type,address_type:item.addresstype,\n    coordinate_kind:'OSM_representative_point_not_verified_vehicle_entrance',\n    osm_url:`https://www.openstreetmap.org/${item.osm_type}/${item.osm_id}`});\n}\nif(!candidates.length) return [{json:{...base,ok:false,error:{code:'AddressNotFound',message:'Адрес не найден в региональной карте. Уточните населённый пункт, улицу и дом или пришлите координаты; отсутствие результата не означает, что адреса не существует.'},candidates:[]}}];\n// Address searches often also return shops inside the same house. Keep the\n// building for a plain address, but retain explicitly named POIs and all genuinely\n// different addresses. A shared address AND containment in the building bbox are\n// required; this is not proximity-only deduplication.\nconst normalize=value=>String(value??'').toLowerCase().replace(/ё/g,'е').replace(/\\s+/g,' ').trim();\nconst addressKey=item=>{\n const a=item.address??{};const locality=a.city??a.town??a.village??a.hamlet;\n return a.house_number && a.road && locality ? [a.country_code,a.state,locality,a.road,a.house_number].map(normalize).join('|') : null;\n};\nconst buildingItems=rawItems.filter(x=>x.category==='building' && addressKey(x));\nconst retained=candidates.filter((candidate,index)=>{\n const raw=rawItems[index];const key=addressKey(raw);\n if(raw.category==='building' || !key || !['shop','office','amenity'].includes(raw.category)) return true;\n if(raw.name && normalize(query).includes(normalize(raw.name))) return true;\n return !buildingItems.some(building=>{\n  if(addressKey(building)!==key || !Array.isArray(building.boundingbox) || building.boundingbox.length!==4) return false;\n  const [south,north,west,east]=building.boundingbox.map(Number);\n  return [south,north,west,east].every(Number.isFinite) && candidate.latitude>=south && candidate.latitude<=north && candidate.longitude>=west && candidate.longitude<=east;\n });\n});\nreturn [{json:{...base,ok:true,requires_confirmation:true,candidates_count:retained.length,results_may_be_truncated:rawItems.length===5,\n  omitted_coaddressed_poi_count:candidates.length-retained.length,\n  candidates:retained,warnings:['До маршрутизации пользователь должен подтвердить найденную точку. Единственный результат не гарантирует точного совпадения адреса.',\n  'Не подменяйте отсутствующий дом центром улицы или города. Для намеренного маршрута до населённого пункта отдельно подтвердите условный центр.',\n  'Данные карты могут быть неполными; точка здания/объекта не является проверенным автомобильным входом.']}}];\n",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        720,
+        0
+      ],
+      "typeVersion": 2
+    }
+  ],
+  "connections": {
+    "Address Input": {
+      "main": [
+        [
+          {
+            "node": "Validate Address Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Address Input": {
+      "main": [
+        [
+          {
+            "node": "Request Local Geocoder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Local Geocoder": {
+      "main": [
+        [
+          {
+            "node": "Format Address Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "59b85095-f465-4d25-9635-d768e429ca6e",
+  "meta": {},
+  "tags": []
+}
